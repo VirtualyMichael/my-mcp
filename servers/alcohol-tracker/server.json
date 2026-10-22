@@ -1,0 +1,9 @@
+{
+  "name": "alcohol-tracker",
+  "description": "Log preset drinks by voice (with confirmation and undo) and get detailed drinking reports from the Alcohol Tracker app",
+  "module": "alcohol_tracker_mcp.server",
+  "skill": "skill/alcohol-tracker",
+  "autoApprove": true,
+  "autoApproveReason": "Safety is enforced inside the server (read-back + yes, own-entries-only undo, locked-down writes, backups), not by a per-call dialog.",
+  "env": {}
+}
