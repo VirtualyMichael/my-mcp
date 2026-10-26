@@ -67,6 +67,49 @@ def _tokens(text: str) -> list[str]:
     return re.findall(r"[a-z]+|\d+(?:\.\d+)?", text.lower())
 
 
+_TENS = {"ten": 10, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+_ONES = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+_STRENGTH_WORDS = {"percent", "pct", "abv", "proof"}
+# words that say nothing about WHICH preset: "a 50 percent shot of the strong stuff" is the same request as "50% shot"
+_FILLER = {"a", "an", "the", "of", "some", "my", "percent", "pct", "abv", "alcohol", "strength", "please"}
+
+
+def _spoken_numbers(tokens: list[str]) -> list[str]:
+    """'fifty percent' -> 50, 'forty five' -> 45, '100 proof' -> 50 (proof is twice the percentage). A small number word such as 'one' or
+    'two' stays a word, because 'two shots' is a quantity, not a strength; it only becomes a number before percent, abv or proof."""
+    out: list[str] = []
+    i = 0
+    while i < len(tokens):
+        t, nxt = tokens[i], tokens[i + 1] if i + 1 < len(tokens) else ""
+        if t in _TENS and nxt in _ONES:
+            out.append(str(_TENS[t] + _ONES[nxt]))
+            i += 2
+        elif t in _TENS:
+            out.append(str(_TENS[t]))
+            i += 1
+        elif t in _ONES and nxt in _STRENGTH_WORDS:
+            out.append(str(_ONES[t]))
+            i += 1
+        else:
+            out.append(t)
+            i += 1
+    final: list[str] = []
+    i = 0
+    while i < len(out):
+        if out[i][0].isdigit() and i + 1 < len(out) and out[i + 1] == "proof":
+            final.append(f"{float(out[i]) / 2:g}")
+            i += 2
+        else:
+            final.append(out[i])
+            i += 1
+    return final
+
+
+def _stem(word: str) -> str:
+    """shots -> shot, beers -> beer (so a plural never stops a match)."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") and not word.endswith("ss") else word
+
+
 def resolve_preset(query: str, presets: list[DrinkPreset]) -> DrinkPreset:
     """Match what the user said to exactly one saved preset, or raise DoseError listing the candidates."""
     if not presets:
@@ -75,16 +118,18 @@ def resolve_preset(query: str, presets: list[DrinkPreset]) -> DrinkPreset:
     for p in presets:
         if p.name.lower() == q:
             return p
-    q_tokens = [t for t in _tokens(q) if t not in {"a", "an", "the", "of", "some", "my"}]
+    q_tokens = [t for t in _spoken_numbers(_tokens(q)) if t not in _FILLER]
+    if len(q_tokens) > 1:
+        q_tokens = [t for t in q_tokens if t not in _ONES]  # 'two beer' is a quantity, which prepare_dose takes separately
     if not q_tokens:
         raise DoseError("Which preset? " + _names(presets))
     q_nums = {t for t in q_tokens if t[0].isdigit()}
-    q_words = {t for t in q_tokens if not t[0].isdigit()}
+    q_words = {_stem(t) for t in q_tokens if not t[0].isdigit()}
     scored: list[tuple[float, DrinkPreset]] = []
     for p in presets:
         toks = _tokens(p.name)
         nums = {t for t in toks if t[0].isdigit()}
-        words = {t for t in toks if not t[0].isdigit() and t not in {"oz"}}
+        words = {_stem(t) for t in toks if not t[0].isdigit() and t not in {"oz"}}
         if q_words and not q_words <= words:
             continue
         if not q_nums <= nums:

@@ -7,7 +7,7 @@ description: Log what the user drank (by preset, e.g. "I just had a beer") into 
 Tools come from the `alcohol-tracker` MCP server. It can only add preset drinks, undo the assistant's own recent entries, and read. It cannot edit or delete anything else. Estimates (BAC, clear time) are from a journaling model, not a measurement, and are never advice on whether it is safe to drive.
 
 ## Logging a drink
-1. Call `prepare_dose` with the drink as the user said it (`quantity` for "two beers", `minutes_ago` for "an hour ago" = 60). If the preset is unclear it lists the matches: ask which one. If there is none, say so and offer `list_drink_presets`; do not invent or substitute a drink.
+1. Call `prepare_dose` with the drink as the user said it, keeping the strength they gave, written in digits ("50% shot", "40% shot", "5% beer"), with `quantity` for "two beers" and `minutes_ago` for "an hour ago" = 60. If the user already said a strength, never ask which strength they meant; only ask when the drink really is ambiguous (a bare "shot" matches both the 50% and the 40% preset). If the preset is unclear it lists the matches: ask which one. If there is none, say so and offer `list_drink_presets`; do not invent or substitute a drink.
 2. Read the `read_back_to_user` line to the user in your own words, say any `warnings_to_say_aloud` plainly and without lecturing, and ask **"Yes or no?"**
 3. Only after the user clearly says yes, call `confirm_dose` with the proposal id and their exact reply. Never answer for them, never confirm in the same turn as prepare, never guess from silence. On "no", drop it.
 4. After logging, say what was logged and that they can say "undo".

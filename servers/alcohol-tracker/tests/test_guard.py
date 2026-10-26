@@ -26,6 +26,29 @@ def test_preset_matching(guard):
         resolve_preset("margarita", ps)
 
 
+def test_a_strength_said_in_words_still_finds_the_preset(guard):
+    """'50 percent shot' used to match nothing (the word 'percent' is not in 'Shot - 40%'), so the assistant asked 'which one?'."""
+    ps = guard.presets()
+    for said in ("50% shot", "a 50 percent shot", "fifty percent shot", "50 percent", "a shot of fifty percent", "50 abv shot", "100 proof shot", "fifty shot"):
+        assert resolve_preset(said, ps).name == "50% Shot", said
+    for said in ("40% shot", "forty percent shot", "a forty percent shot", "80 proof shot", "forty shot"):
+        assert resolve_preset(said, ps).name == "Shot - 40%", said
+    assert resolve_preset("double shot forty percent", ps).name == "Double shot - 40%"
+    assert resolve_preset("five percent beer", ps).name == "Beer - 12 oz 5%"
+    assert resolve_preset("eight percent strong beer", ps).name == "Strong beer - 16 oz 8%"
+
+
+def test_plurals_and_quantities_do_not_change_the_match(guard):
+    ps = guard.presets()
+    assert resolve_preset("50 percent shots", ps).name == "50% Shot" and resolve_preset("beers", ps).name == "Beer - 12 oz 5%"
+    assert resolve_preset("two beer", ps).name in {"Beer - 12 oz 5%"}  # 'two' stays a word (a quantity), so it cannot become a strength
+
+
+def test_a_bare_shot_still_asks_because_two_presets_are_shots(guard):
+    with pytest.raises(DoseError, match="more than one"):
+        resolve_preset("a shot", guard.presets())
+
+
 def test_prepare_writes_nothing(guard):
     p = guard.prepare("beer", 2)
     assert count(guard) == 0 and p.quantity == 2
