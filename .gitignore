@@ -12,3 +12,4 @@ build/
 .graphify/cache/
 .graphify/manifest.json
 .graphify/.graphify_detect.json
+.graphify/scope.json
