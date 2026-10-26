@@ -2,9 +2,11 @@
 
   teach      list_vrchat_guides, get_vrchat_guide, learning_path, explain_vrchat_error
   inspect    find_vrchat_projects, inspect_vrchat_project, analyze_controller, read_expression_parameters,
-             read_expression_menu, check_avatar_setup                         (all read-only)
+             read_expression_menu, check_avatar_setup, list_scene_objects, scan_avatar_tools, project_bloat_scan,
+             lint_udon_script, list_job_backups                                (all read-only)
   write      list_script_templates, generate_udon_script (new .cs file only, never overwrites)
-  control    queue_avatar_job (installs a Unity-side runner + writes a job), run_unity_jobs (headless Unity applies it)
+  control    queue_avatar_job (installs a Unity-side runner + writes a job), run_unity_jobs (headless Unity applies it),
+             restore_job_backup (puts the three assets back as they were)
 
 Avatar edits happen inside Unity through a runner script that backs up every asset, validates first and rolls back on failure.
 """
@@ -20,7 +22,7 @@ except ImportError:  # MCP SDK 1.x
     from mcp.server.fastmcp import FastMCP as _Server
 from mcp.types import ToolAnnotations
 
-from vrchat_unity_mcp import guides, jobs, projects, templates
+from vrchat_unity_mcp import backups, guides, jobs, projects, scan, templates, udonlint
 from vrchat_unity_mcp.unityyaml import UnityYamlError
 
 INSTRUCTIONS = (
@@ -123,9 +125,55 @@ def check_avatar_setup(controller_path: str, parameters_asset_path: str, menu_as
 
 
 @mcp.tool(annotations=RO)
+@_safe
+def list_scene_objects(file_path: str, name_contains: str = "", limit: int = 300) -> str:
+    """Object paths in a .prefab or .unity file, relative to the avatar root (the VRC Avatar Descriptor object). Use it to get a
+    correct object_path / renderer_path for queue_avatar_job. Objects inside imported models or nested prefabs may be missing."""
+    return _json(scan.list_scene_objects(file_path, name_contains, limit))
+
+
+@mcp.tool(annotations=RO)
+@_safe
+def scan_avatar_tools(file_path: str) -> str:
+    """Count VRCFury features (with toggle names) and Modular Avatar components in an avatar .prefab/.unity file. These add layers,
+    parameters and menus at build time, so the raw FX controller understates what the avatar does."""
+    return _json(scan.scan_avatar_tools(file_path))
+
+
+@mcp.tool(annotations=RO)
+@_safe
+def project_bloat_scan(project_path: str, top: int = 15) -> str:
+    """Largest textures and models in a project with their import max size and crunch setting, plus optimisation tips."""
+    return _json(scan.bloat_scan(project_path, top))
+
+
+@mcp.tool(annotations=RO)
+@_safe
+def lint_udon_script(script_path: str) -> str:
+    """Quick lint of an UdonSharp .cs file for unsupported C# (async, LINQ, List<>, try/catch, static, lambdas), class/file name
+    mismatch, missing 'override', Manual sync without RequestSerialization, private/parameterised network events. Not a compiler."""
+    return _json(udonlint.lint(script_path))
+
+
+@mcp.tool(annotations=RO)
+@_safe
+def list_job_backups(project_path: str) -> str:
+    """Backups made before each avatar job (job name and the assets saved)."""
+    return _json(backups.list_backups(project_path))
+
+
+@mcp.tool()
+@_safe
+def restore_job_backup(project_path: str, job_name: str) -> str:
+    """Undo an avatar job by putting its controller, expression parameters and menu back as they were. Refuses if Unity has the
+    project open. Confirm with the user first."""
+    return _json(backups.restore_backup(project_path, job_name))
+
+
+@mcp.tool(annotations=RO)
 def list_script_templates() -> str:
     """UdonSharp templates generate_udon_script can write (toggle, teleporter, audio button, trigger zone, spinner, pickup events,
-    animator switch, join greeter)."""
+    animator switch, join greeter, synced counter, respawn button, speed zone)."""
     return _json(templates.list_templates())
 
 
@@ -151,7 +199,10 @@ def queue_avatar_job(project_path: str, job_name: str, controller_path: str, par
     """Prepare avatar edits for Unity to apply (nothing changes until the job is run). Installs the runner script in the project
     and writes the job. Each op: {"op":"toggle","name":"Hat","object_path":"Body/Hat","default_on":false,"menu_path":"Clothes",
     "synced":true,"saved":true} or {"op":"blendshape_slider","name":"Ear Size","parameter":"EarSize","renderer_path":"Body",
-    "blendshape":"EarSize","min_value":0,"max_value":100,"default_value":0}. Paths are project-relative (Assets/...) for the three
+    "blendshape":"EarSize","min_value":0,"max_value":100,"default_value":0}, or an Int selector (8 bits, menu value 1..N, 0 = none/default):
+    {"op":"outfit_selector","name":"Outfit","options":[{"label":"Hoodie","object_paths":["Body/Hoodie"]},...],"default_option":0} and
+    {"op":"material_swap","name":"Eye Color","renderer_path":"Body","material_index":2,"options":[{"label":"Blue","material":"Assets/.../Blue.mat"},...]}
+    (options become a sub menu named after the op; max 8). Paths are project-relative (Assets/...) for the three
     assets and avatar-root-relative for objects. The runner adds the parameter, a layer (weight 1, instant transitions, Write Defaults
     matching the controller), clips, the expression parameter and the menu control; it backs up first and rolls back on error.
     Confirm the plan with the user first. Use a COPY of the stock FX controller, never the VRChat default."""

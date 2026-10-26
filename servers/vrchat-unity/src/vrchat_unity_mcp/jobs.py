@@ -21,7 +21,7 @@ RUNNER_REL = "Assets/Editor/ClaudeVRC/ClaudeVRCJobRunner.cs"
 JOBS_REL = "Assets/ClaudeVRC/Jobs"
 _NAME = re.compile(r"^[A-Za-z0-9_/-]+$")
 _JOB = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
-OPS = {"toggle", "blendshape_slider"}
+OPS = {"toggle", "blendshape_slider", "outfit_selector", "material_swap"}
 
 
 def _root(project: str) -> Path:
@@ -86,13 +86,39 @@ def queue_job(project: str, job_name: str, controller: str, parameters: str, men
             entry["object_path"] = str(op.get("object_path", "")).strip("/")
             if not entry["object_path"]:
                 raise ValueError(f"ops[{i}] toggle needs object_path (path of the object below the avatar root, e.g. 'Body/Hat').")
-        else:
+        elif kind == "blendshape_slider":
             entry["renderer_path"] = str(op.get("renderer_path", "")).strip("/")
             entry["blendshape"] = str(op.get("blendshape", ""))
             if not entry["renderer_path"] or not entry["blendshape"]:
                 raise ValueError(f"ops[{i}] blendshape_slider needs renderer_path and blendshape.")
             if not 0 <= entry["default_value"] <= 1:
                 raise ValueError("default_value for a slider must be between 0 and 1.")
+        else:
+            options = op.get("options") or []
+            if not 1 <= len(options) <= 8:
+                raise ValueError(f"ops[{i}] {kind} needs 1-8 options (one menu control each; use a second op for more).")
+            built = []
+            for j, o in enumerate(options):
+                label = str(o.get("label", "")).strip()
+                if not label:
+                    raise ValueError(f"ops[{i}].options[{j}] needs a label.")
+                if kind == "outfit_selector":
+                    paths = [str(x).strip("/") for x in (o.get("object_paths") or []) if str(x).strip("/")]
+                    if not paths:
+                        raise ValueError(f"ops[{i}].options[{j}] ('{label}') needs object_paths (objects shown for this outfit).")
+                    built.append({"label": label, "object_paths": paths, "material": ""})
+                else:
+                    built.append({"label": label, "object_paths": [], "material": _asset_path(root, str(o.get("material", "")), ".mat")})
+            entry["options"] = built
+            entry["default_option"] = int(op.get("default_option", 0))
+            if not 0 <= entry["default_option"] <= len(built):
+                raise ValueError(f"ops[{i}] default_option must be 0 (none/default) to {len(built)}.")
+            if kind == "material_swap":
+                entry["renderer_path"] = str(op.get("renderer_path", "")).strip("/")
+                if not entry["renderer_path"]:
+                    raise ValueError(f"ops[{i}] material_swap needs renderer_path.")
+                entry["material_index"] = int(op.get("material_index", 0))
+                entry["is_skinned"] = bool(op.get("is_skinned", True))
         clean.append(entry)
     if not clean:
         raise ValueError("ops is empty.")

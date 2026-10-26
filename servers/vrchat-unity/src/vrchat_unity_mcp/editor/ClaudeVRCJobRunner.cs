@@ -18,9 +18,17 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 namespace ClaudeVRC
 {
     [Serializable]
+    public class OptionDef
+    {
+        public string label;
+        public string[] object_paths;   // outfit_selector: objects shown when this option is picked
+        public string material;         // material_swap: material asset path (Assets/...)
+    }
+
+    [Serializable]
     public class JobOp
     {
-        public string op;               // "toggle" | "blendshape_slider"
+        public string op;               // "toggle" | "blendshape_slider" | "outfit_selector" | "material_swap"
         public string name;             // menu label
         public string parameter;        // animator/expression parameter name
         public string object_path;      // toggle: path of the GameObject relative to the avatar root, e.g. "Body/Hat"
@@ -34,7 +42,17 @@ namespace ClaudeVRC
         public bool synced = true;
         public string menu_path = "";   // "" = root menu, "Clothes/Hats" = nested sub menus (created when missing)
         public string write_defaults = "auto"; // "auto" | "on" | "off"
+        public OptionDef[] options;     // outfit_selector / material_swap: 1-8 options (menu value = position + 1, 0 = none/default)
+        public int default_option = 0;  // selectors: starting value (0 = none/default)
+        public int material_index = 0;  // material_swap: material slot on the renderer
+        public bool is_skinned = true;  // material_swap: SkinnedMeshRenderer (true) or MeshRenderer (false)
     }
+
+    [Serializable]
+    class ManifestEntry { public string original; public string backup; }
+
+    [Serializable]
+    class Manifest { public ManifestEntry[] files; }
 
     [Serializable]
     public class JobFile
@@ -118,6 +136,8 @@ namespace ClaudeVRC
                     {
                         case "toggle": ApplyToggle(op, pname, controller, pars, menu); break;
                         case "blendshape_slider": ApplySlider(op, pname, controller, pars, menu); break;
+                        case "outfit_selector":
+                        case "material_swap": ApplySelector(op, pname, controller, pars, menu); break;
                     }
                     log.Add(op.op + " '" + op.name + "' (parameter " + pname + ")");
                 }
@@ -142,7 +162,8 @@ namespace ClaudeVRC
             int addBits = 0;
             foreach (var op in job.ops)
             {
-                if (op.op != "toggle" && op.op != "blendshape_slider") throw new Exception("unknown op '" + op.op + "'");
+                if (op.op != "toggle" && op.op != "blendshape_slider" && op.op != "outfit_selector" && op.op != "material_swap")
+                    throw new Exception("unknown op '" + op.op + "'");
                 if (string.IsNullOrEmpty(op.name)) throw new Exception("every op needs a name");
                 string p = ParamName(op);
                 if (!Ident.IsMatch(p)) throw new Exception("parameter name '" + p + "' may only contain letters, digits, '_', '/' and '-'");
@@ -153,10 +174,28 @@ namespace ClaudeVRC
                 if (op.op == "toggle" && string.IsNullOrEmpty(op.object_path)) throw new Exception("toggle '" + op.name + "' needs object_path");
                 if (op.op == "blendshape_slider" && (string.IsNullOrEmpty(op.renderer_path) || string.IsNullOrEmpty(op.blendshape)))
                     throw new Exception("slider '" + op.name + "' needs renderer_path and blendshape");
+                if (op.op == "outfit_selector" || op.op == "material_swap") ValidateSelector(op);
                 if (op.synced) addBits += op.op == "toggle" ? 1 : 8;
             }
             if (SyncedBits(pars) + addBits > MaxSyncedBits)
                 throw new Exception("would use " + (SyncedBits(pars) + addBits) + " synced bits; the limit is " + MaxSyncedBits + ". Make some parameters unsynced or remove unused ones.");
+        }
+
+        static void ValidateSelector(JobOp op)
+        {
+            if (op.options == null || op.options.Length < 1 || op.options.Length > MaxMenuControls)
+                throw new Exception("'" + op.name + "' needs 1-" + MaxMenuControls + " options");
+            if (op.default_option < 0 || op.default_option > op.options.Length) throw new Exception("default_option for '" + op.name + "' is out of range");
+            foreach (var o in op.options)
+            {
+                if (string.IsNullOrEmpty(o.label)) throw new Exception("every option of '" + op.name + "' needs a label");
+                if (op.op == "outfit_selector" && (o.object_paths == null || o.object_paths.Length == 0))
+                    throw new Exception("option '" + o.label + "' needs object_paths");
+                if (op.op == "material_swap" && AssetDatabase.LoadAssetAtPath<Material>(o.material) == null)
+                    throw new Exception("material not found for option '" + o.label + "': " + o.material);
+            }
+            if (op.op == "material_swap" && (string.IsNullOrEmpty(op.renderer_path) || op.material_index < 0))
+                throw new Exception("material_swap '" + op.name + "' needs renderer_path and a material_index");
         }
 
         static int SyncedBits(VRCExpressionParameters pars)
@@ -219,6 +258,64 @@ namespace ClaudeVRC
                 subParameters = new[] { new VRCExpressionsMenu.Control.Parameter { name = pname } }
             };
             AddMenuControl(rootMenu, op.menu_path, control);
+        }
+
+        // Int selector: value 0 = none/default, value i = option i. One layer, one state per value, reached from Any State.
+        static void ApplySelector(JobOp op, string pname, AnimatorController controller, VRCExpressionParameters pars, VRCExpressionsMenu rootMenu)
+        {
+            bool wd = WriteDefaults(op, controller);
+            bool material = op.op == "material_swap";
+            int n = op.options.Length;
+            var allPaths = material ? new string[0] : op.options.SelectMany(o => o.object_paths).Distinct().ToArray();
+            var clips = new AnimationClip[n + 1];
+            for (int i = 0; i <= n; i++)
+            {
+                var clip = new AnimationClip { name = pname + "_" + i };
+                if (material)
+                {
+                    var mat = AssetDatabase.LoadAssetAtPath<Material>(op.options[Mathf.Max(i - 1, 0)].material);
+                    var type = op.is_skinned ? typeof(SkinnedMeshRenderer) : typeof(MeshRenderer);
+                    var b = EditorCurveBinding.PPtrCurve(op.renderer_path, type, "m_Materials.Array.data[" + op.material_index + "]");
+                    AnimationUtility.SetObjectReferenceCurve(clip, b, new[] { new ObjectReferenceKeyframe { time = 0f, value = mat } });
+                }
+                else
+                {
+                    foreach (string path in allPaths)
+                    {
+                        bool on = i >= 1 && op.options[i - 1].object_paths.Contains(path);
+                        var b = EditorCurveBinding.FloatCurve(path, typeof(GameObject), "m_IsActive");
+                        AnimationUtility.SetEditorCurve(clip, b, AnimationCurve.Constant(0f, 1f / 60f, on ? 1f : 0f));
+                    }
+                }
+                SaveAsset(clip, "Animations", clip.name + ".anim");
+                clips[i] = clip;
+            }
+
+            controller.AddParameter(new AnimatorControllerParameter { name = pname, type = AnimatorControllerParameterType.Int, defaultInt = op.default_option });
+            var sm = AddLayer(controller, op.name);
+            var states = new AnimatorState[n + 1];
+            for (int i = 0; i <= n; i++)
+            {
+                string label = i == 0 ? (material ? "Default" : "None") : op.options[i - 1].label;
+                states[i] = sm.AddState(op.name + " " + label, new Vector3(300, 60 * i, 0));
+                states[i].motion = clips[i];
+                states[i].writeDefaultValues = wd;
+                Instant(sm.AddAnyStateTransition(states[i])).AddCondition(AnimatorConditionMode.Equals, i, pname);
+            }
+            sm.defaultState = states[Mathf.Clamp(op.default_option, 0, n)];
+
+            AddExpressionParameter(pars, pname, VRCExpressionParameters.ValueType.Int, op.default_option, op);
+            string folder = string.IsNullOrEmpty(op.menu_path) ? op.name : op.menu_path.Trim('/') + "/" + op.name;
+            for (int i = 1; i <= n; i++)
+            {
+                AddMenuControl(rootMenu, folder, new VRCExpressionsMenu.Control
+                {
+                    name = op.options[i - 1].label,
+                    type = VRCExpressionsMenu.Control.ControlType.Toggle,
+                    parameter = new VRCExpressionsMenu.Control.Parameter { name = pname },
+                    value = i
+                });
+            }
         }
 
         // ------------------------------------------------------------------ helpers
@@ -335,6 +432,8 @@ namespace ClaudeVRC
                 if (!AssetDatabase.CopyAsset(p, dest)) throw new Exception("could not back up " + p);
                 map[p] = dest;
             }
+            var manifest = new Manifest { files = map.Select(kv => new ManifestEntry { original = kv.Key, backup = kv.Value }).ToArray() };
+            File.WriteAllText(dir + "/manifest.json", JsonUtility.ToJson(manifest, true));
             return map;
         }
 

@@ -296,6 +296,91 @@ public class {cls} : UdonSharpBehaviour
 """
 
 
+def synced_counter(cls: str, **_) -> str:
+    return f"""{HEADER}using TMPro;
+
+{_sync_attr(True)}
+public class {cls} : UdonSharpBehaviour
+{{
+    [Tooltip("Text that shows the shared count. Clicking this object (needs a Collider) adds 'step'.")]
+    public TMP_Text label;
+    public int step = 1;
+
+    [UdonSynced, FieldChangeCallback(nameof(Count))]
+    private int _count;
+
+    public int Count
+    {{
+        get => _count;
+        set
+        {{
+            _count = value;
+            if (label != null) label.text = _count.ToString();
+        }}
+    }}
+
+    void Start()
+    {{
+        Count = _count;
+    }}
+
+    public override void Interact()
+    {{
+        Networking.SetOwner(Networking.LocalPlayer, gameObject);
+        Count = _count + step;
+        RequestSerialization();
+    }}
+}}
+"""
+
+
+def respawn_button(cls: str, **_) -> str:
+    return f"""{HEADER}
+{_sync_attr(False)}
+public class {cls} : UdonSharpBehaviour
+{{
+    // Click to send the local player back to the world's spawn point. Needs a Collider on this object.
+    public override void Interact()
+    {{
+        VRCPlayerApi me = Networking.LocalPlayer;
+        if (Utilities.IsValid(me)) me.Respawn();
+    }}
+}}
+"""
+
+
+def speed_zone(cls: str, **_) -> str:
+    return f"""{HEADER}
+{_sync_attr(False)}
+public class {cls} : UdonSharpBehaviour
+{{
+    [Tooltip("Applied to the local player while inside this trigger collider (Is Trigger ON). VRChat defaults: walk 2, run 4, strafe 2, jump 0.")]
+    public float walkSpeed = 4f;
+    public float runSpeed = 8f;
+    public float strafeSpeed = 4f;
+    public float jumpImpulse = 3f;
+
+    public override void OnPlayerTriggerEnter(VRCPlayerApi player)
+    {{
+        if (!Utilities.IsValid(player) || !player.isLocal) return;
+        player.SetWalkSpeed(walkSpeed);
+        player.SetRunSpeed(runSpeed);
+        player.SetStrafeSpeed(strafeSpeed);
+        player.SetJumpImpulse(jumpImpulse);
+    }}
+
+    public override void OnPlayerTriggerExit(VRCPlayerApi player)
+    {{
+        if (!Utilities.IsValid(player) || !player.isLocal) return;
+        player.SetWalkSpeed(2f);
+        player.SetRunSpeed(4f);
+        player.SetStrafeSpeed(2f);
+        player.SetJumpImpulse(0f);
+    }}
+}}
+"""
+
+
 TEMPLATES = {
     "interact_toggle": (interact_toggle, "Click to show/hide objects. Option synced=true shares it with everyone and late joiners."),
     "teleporter": (teleporter, "Click (or walk into a trigger, option on_trigger=true) to teleport the local player to a destination Transform."),
@@ -305,6 +390,9 @@ TEMPLATES = {
     "pickup_events": (pickup_events, "Reacts to a VRC Pickup being picked up / dropped / used."),
     "animator_switch": (animator_switch, "Click to flip a Bool on an Animator (doors, lifts). Options: synced, parameter."),
     "join_greeter": (join_greeter, "Writes 'Name joined/left' into a TextMeshPro label."),
+    "synced_counter": (synced_counter, "Click to add to a shared counter everyone sees (late joiners included), shown in a TextMeshPro label."),
+    "respawn_button": (respawn_button, "Click to send the local player back to spawn."),
+    "speed_zone": (speed_zone, "Changes walk/run/jump speed for the local player while inside a trigger."),
 }
 
 
