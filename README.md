@@ -9,6 +9,7 @@ python install.py list
 python install.py alcohol-tracker --dry-run        # show what would change
 python install.py alcohol-tracker                  # voice assistant + Bionic/LM Studio
 python install.py alcohol-tracker --target claude-code
+# or double-click install-vrchat-unity.bat (see INSTALL.md)
 ```
 
 The installer gives each server its own virtual environment (`~/.my-mcp/venvs/<name>`), registers it in the chosen app's config

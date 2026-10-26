@@ -4,3 +4,11 @@ __pycache__/
 *.egg-info/
 .venv/
 build/
+
+# graphify: per-machine files (never commit)
+.graphify/branch.json
+.graphify/worktree.json
+.graphify/needs_update
+.graphify/cache/
+.graphify/manifest.json
+.graphify/.graphify_detect.json
