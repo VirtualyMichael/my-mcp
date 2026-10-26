@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vrchat-unity-mcp"
+version = "0.1.0"
+description = "MCP server for VRChat + Unity creation: guided learning, project inspection, UdonSharp generation, safe avatar controller edits"
+requires-python = ">=3.10"
+dependencies = ["mcp>=1.2", "pyyaml>=6"]
+
+[project.scripts]
+vrchat-unity-mcp = "vrchat_unity_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+vrchat_unity_mcp = ["guides/*.md", "editor/*.cs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

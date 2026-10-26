@@ -1,0 +1,9 @@
+{
+  "name": "vrchat-unity",
+  "description": "Guided VRChat avatar/world creation in Unity: teaching guides, project and animator-controller inspection, UdonSharp script generation, and safe (backed-up) avatar toggle/slider edits",
+  "module": "vrchat_unity_mcp.server",
+  "skill": "skill/vrchat-unity",
+  "autoApprove": false,
+  "autoApproveReason": "Writes into the user's Unity projects, so each write/run call should be approved.",
+  "env": {}
+}

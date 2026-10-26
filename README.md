@@ -18,6 +18,7 @@ The installer gives each server its own virtual environment (`~/.my-mcp/venvs/<n
 
 | Server | What it does |
 |---|---|
+| [vrchat-unity](servers/vrchat-unity) | Guided VRChat avatar/world creation in Unity: 16 teaching guides (beginner to UdonSharp), inspect your projects and animator controllers, generate UdonSharp scripts, and add avatar toggles/sliders through a backed-up Unity job runner. |
 | [alcohol-tracker](servers/alcohol-tracker) | Log preset drinks by voice (read-back, yes/no, undo) and get detailed drinking reports from the Alcohol Ingestion Tracker app. Built so an AI cannot edit or delete your records. |
 
 ## Adding a server
